@@ -1,0 +1,79 @@
+group = "gradle"
+version = "1.0"
+
+import java.util.concurrent.TimeUnit
+
+class GradleTaskTimeCounter implements Plugin<Project> {
+
+    Map<String, TaskInfo> taskInfoMap = new HashMap<>()
+    List<String> taskNameList = new ArrayList<>()
+
+    @Override
+    void apply(Project project) {
+        project.getGradle().addListener(new TaskExecutionListener() {
+            @Override
+            void beforeExecute(Task task) {
+                TaskInfo info = new TaskInfo()
+                info.startExecTime = System.nanoTime()
+                info.taskName = task.getPath()
+                taskInfoMap.put(info.taskName, info)
+                taskNameList.add(info.taskName)
+            }
+
+            @Override
+            void afterExecute(Task task, TaskState taskState) {
+                TaskInfo info = taskInfoMap.get(task.getPath())
+                info.endExecTime = System.currentTimeMillis()
+                info.totalExecTime = TimeUnit.MILLISECONDS.convert(System.nanoTime() - info.startExecTime,
+                        TimeUnit.NANOSECONDS)
+            }
+        })
+
+        project.getGradle().addBuildListener(new BuildListener() {
+            @Override
+            void buildStarted(Gradle gradle) {}
+
+            @Override
+            void settingsEvaluated(Settings settings) {}
+
+            @Override
+            void projectsLoaded(Gradle gradle) {}
+
+            @Override
+            void projectsEvaluated(Gradle gradle) {}
+
+            @Override
+            void buildFinished(BuildResult buildResult) {
+                // 排序
+                List<TaskInfo> list = new ArrayList<>()
+                for (Map.Entry<String, TaskInfo> entry : taskInfoMap) {
+                    list.add(entry.value)
+                }
+                Collections.sort(list, new Comparator<TaskInfo>() {
+                    @Override
+                    int compare(TaskInfo t1, TaskInfo t2) {
+                        return t2.totalExecTime - t1.totalExecTime
+                    }
+                })
+                println "--------------- start -----------------"
+                println "编译完成, 每个 Gradle Task 执行时间如下:"
+                for (TaskInfo taskInfo : list) {
+                    println("${taskInfo.taskName}  [${taskInfo.totalExecTime}ms]")
+                }
+                println "---------------- end ------------------"
+                println "因 Gradle 增量构建结果仅供参考"
+            }
+        })
+
+    }
+
+    class TaskInfo {
+        long totalExecTime
+        long startExecTime
+        long endExecTime
+        String taskName
+    }
+
+}
+
+apply plugin: GradleTaskTimeCounter
